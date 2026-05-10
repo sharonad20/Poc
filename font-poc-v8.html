@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>פונט חכם</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f5f5f3; color: #1a1a1a; padding: 1.5rem; }
+  .box { background: #fff; border: 1px solid #e5e5e5; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+  #status { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #666; }
+  #dot { width: 10px; height: 10px; border-radius: 50%; background: #ccc; flex-shrink: 0; transition: background 0.3s; }
+  #dot.active { background: #1D9E75; }
+  #meter-bar { height: 6px; background: #e5e5e5; border-radius: 4px; overflow: hidden; margin-top: 10px; }
+  #meter-fill { height: 100%; width: 0%; border-radius: 4px; transition: width 0.08s; }
+  #sample { line-height: 1.7; transition: font-size 0.25s ease; color: #1a1a1a; font-size: 14px; }
+  #font-info { font-size: 12px; color: #999; margin-top: 0.75rem; }
+  #font-size-big { font-size: 28px; font-weight: 500; color: #1D9E75; }
+  button { width: 100%; padding: 0.85rem; border-radius: 10px; border: none; background: #1D9E75; color: #fff; font-size: 15px; font-weight: 500; cursor: pointer; margin-bottom: 1rem; }
+  button:active { background: #0F6E56; }
+  #reset-btn { background: #fff; color: #1a1a1a; border: 1px solid #e5e5e5; margin-bottom: 0; }
+  #debug-row { display: flex; justify-content: space-between; font-size: 12px; color: #999; margin-top: 8px; }
+  #dir-label { text-align: center; font-size: 13px; font-weight: 500; margin-top: 6px; min-height: 18px; }
+</style>
+</head>
+<body>
+
+<div class="box">
+  <div id="status"><div id="dot"></div><span id="status-text">לחץ התחל</span></div>
+  <div id="meter-bar"><div id="meter-fill"></div></div>
+  <div id="dir-label"></div>
+  <div id="debug-row">
+    <span>dY: <strong id="dy-live">0.00</strong></span>
+    <span>dZ: <strong id="dz-live">0.00</strong></span>
+    <span>פונט: <strong id="font-val">14</strong>px</span>
+  </div>
+</div>
+
+<div class="box">
+  <p id="sample">בגיל 40 ומעלה, העדשה בעין הופכת פחות גמישה — תופעה הנקראת פרסביופיה. הטלפון מורחק מהעיניים כי זה פשוט עוזר לראות טוב יותר. הרחק את הטלפון ותראה מה קורה.</p>
+  <div id="font-info">גודל פונט: <span id="font-size-big">14</span>px</div>
+</div>
+
+<button onclick="startSensor()">התחל — הפעל חיישן</button>
+<button id="reset-btn" onclick="resetFont()">אפס פונט</button>
+
+<script>
+  const MIN = 14, MAX = 32;
+  let lockedFont = MIN;
+  let active = false;
+  let lastY = null, lastZ = null;
+  let smoothedDY = 0, smoothedDZ = 0;
+  let decayTimer = null;
+  let decayInterval = null;
+
+  function setFont(size) {
+    size = Math.min(MAX, Math.max(MIN, size));
+    document.getElementById('sample').style.fontSize = size + 'px';
+    document.getElementById('font-val').textContent = Math.round(size);
+    document.getElementById('font-size-big').textContent = Math.round(size);
+    lockedFont = size;
+  }
+
+  function resetFont() {
+    lockedFont = MIN;
+    setFont(MIN);
+    clearTimeout(decayTimer);
+    clearInterval(decayInterval);
+  }
+
+  function startDecay() {
+    clearInterval(decayInterval);
+    decayInterval = setInterval(() => {
+      if (lockedFont <= MIN) { clearInterval(decayInterval); return; }
+      lockedFont = Math.max(MIN, lockedFont - 0.4);
+      setFont(lockedFont);
+    }, 100);
+  }
+
+  function showDir(text, color) {
+    document.getElementById('dir-label').textContent = text;
+    document.getElementById('dir-label').style.color = color;
+    document.getElementById('meter-fill').style.background = color;
+  }
+
+  function onMotion(e) {
+    const acc = e.acceleration;
+    const accG = e.accelerationIncludingGravity;
+    if (!acc || !accG) return;
+
+    const y = acc.y || 0;
+    const z = accG.z || 0;
+
+    if (lastY === null) { lastY = y; lastZ = z; return; }
+
+    const rawDY = y - lastY;
+    const rawDZ = z - lastZ;
+    lastY = y;
+    lastZ = z;
+
+    smoothedDY = smoothedDY * 0.55 + Math.abs(rawDY) * 0.45;
+    smoothedDZ = smoothedDZ * 0.55 + Math.abs(rawDZ) * 0.45;
+
+    document.getElementById('dy-live').textContent = smoothedDY.toFixed(2);
+    document.getElementById('dz-live').textContent = smoothedDZ.toFixed(2);
+
+    const signal = Math.max(smoothedDY, smoothedDZ);
+    document.getElementById('meter-fill').style.width = Math.min(100, signal * 15) + '%';
+
+    const awayY = rawDY < -0.4;
+    const awayZ = rawDZ > 0.4;
+    const closeY = rawDY > 0.4;
+    const closeZ = rawDZ < -0.4;
+
+    const isAway = awayY || awayZ;
+    const isClose = closeY || closeZ;
+
+    if (signal > 0.35) {
+      if (isAway && !isClose) {
+        clearTimeout(decayTimer);
+        clearInterval(decayInterval);
+        decayInterval = null;
+        // קפיצה גדולה — מינימום 2px, מקסימום 5px בכל אירוע
+        const jump = Math.min(5, Math.max(2, signal * 3));
+        lockedFont = Math.min(MAX, lockedFont + jump);
+        setFont(lockedFont);
+        showDir('מרחיק — פונט גדל', '#1D9E75');
+        decayTimer = setTimeout(startDecay, 2500);
+      } else if (isClose && !isAway) {
+        clearTimeout(decayTimer);
+        clearInterval(decayInterval);
+        decayInterval = null;
+        const jump = Math.min(5, Math.max(2, signal * 3));
+        lockedFont = Math.max(MIN, lockedFont - jump);
+        setFont(lockedFont);
+        showDir('מקרב — פונט קטן', '#D85A30');
+      } else {
+        showDir('תנועה כללית', '#999');
+      }
+    } else {
+      document.getElementById('dir-label').textContent = '';
+    }
+  }
+
+  function startSensor() {
+    if (active) return;
+    active = true;
+    window.addEventListener('devicemotion', onMotion, true);
+    document.getElementById('dot').classList.add('active');
+    document.getElementById('status-text').textContent = 'חיישן פעיל — הרחק / קרב';
+    document.querySelector('button').disabled = true;
+    document.querySelector('button').style.opacity = '0.5';
+  }
+
+  setFont(MIN);
+</script>
+</body>
+</html>
