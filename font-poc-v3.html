@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>פונט חכם</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f5f5f3; color: #1a1a1a; padding: 1.5rem; }
+
+  .box { background: #fff; border: 1px solid #e5e5e5; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+
+  #dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ccc; margin-left: 8px; vertical-align: middle; transition: background 0.3s; }
+  #dot.active { background: #1D9E75; }
+
+  #meter-bar { height: 6px; background: #e5e5e5; border-radius: 4px; overflow: hidden; margin-top: 8px; }
+  #meter-fill { height: 100%; width: 0%; background: #1D9E75; border-radius: 4px; transition: width 0.08s; }
+
+  #sample { font-size: 14px; line-height: 1.7; transition: font-size 0.2s ease; color: #1a1a1a; }
+  #font-info { font-size: 12px; color: #999; margin-top: 0.75rem; }
+
+  button { width: 100%; padding: 0.85rem; border-radius: 10px; border: 1px solid #ddd; background: #fff; font-size: 15px; cursor: pointer; margin-bottom: 0.75rem; }
+  button:active { background: #f0f0f0; }
+  #start-btn { background: #1D9E75; color: #fff; border-color: #1D9E75; font-weight: 500; }
+  #start-btn:active { background: #0F6E56; }
+
+  label { font-size: 13px; color: #666; display: block; margin-bottom: 6px; }
+  input[type=range] { width: 100%; accent-color: #1D9E75; }
+
+  #counter { font-size: 22px; font-weight: 500; color: #1D9E75; }
+  #log { font-size: 12px; color: #666; line-height: 1.8; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+
+<div class="box">
+  <span id="dot"></span>
+  <span id="status-text" style="font-size:13px; color:#666;">לחץ התחל</span>
+  <div id="meter-bar"><div id="meter-fill"></div></div>
+</div>
+
+<div class="box">
+  <p id="sample">בגיל 40 ומעלה, העדשה בעין הופכת פחות גמישה — תופעה הנקראת פרסביופיה. הטלפון מורחק מהעיניים כי זה פשוט עוזר לראות טוב יותר. התוסף הזה מזהה בדיוק את אותה תנועה ומגיב בהתאם.</p>
+  <div id="font-info">גודל פונט: <strong id="font-val">14</strong>px</div>
+</div>
+
+<button id="start-btn" onclick="startSensor()">התחל — הפעל חיישן</button>
+<button onclick="resetFont()">אפס פונט</button>
+
+<div class="box">
+  <label>סימולציה ידנית</label>
+  <input type="range" id="slider" min="0" max="100" value="0" step="1" oninput="onSlider(this.value)">
+</div>
+
+<div class="box">
+  <div style="font-size:12px;color:#999;margin-bottom:4px;">אירועים שהתקבלו</div>
+  <div id="counter">0</div>
+  <div style="margin-top:12px;font-size:12px;color:#999;margin-bottom:4px;">לוג</div>
+  <div id="log"></div>
+</div>
+
+<script>
+  const MIN = 14, MAX = 28;
+  let lockedFont = MIN;
+  let smoothed = 0;
+  let lastAcc = { x: 0, y: 0, z: 0 };
+  let decayTimer = null;
+  let count = 0;
+
+  function log(msg) {
+    const el = document.getElementById('log');
+    el.textContent = new Date().toLocaleTimeString() + ': ' + msg + '\n' + el.textContent;
+  }
+
+  function setFont(size) {
+    size = Math.min(MAX, Math.max(MIN, Math.round(size)));
+    document.getElementById('sample').style.fontSize = size + 'px';
+    document.getElementById('font-val').textContent = size;
+  }
+
+  function onSlider(val) {
+    const size = MIN + Math.round((MAX - MIN) * val / 100);
+    lockedFont = size;
+    setFont(size);
+  }
+
+  function resetFont() {
+    lockedFont = MIN;
+    setFont(MIN);
+    document.getElementById('slider').value = 0;
+  }
+
+  function onMotion(e) {
+    count++;
+    document.getElementById('counter').textContent = count;
+
+    const acc = e.accelerationIncludingGravity || e.acceleration;
+    if (!acc) { if (count === 1) log('acc null'); return; }
+
+    const dx = (acc.x || 0) - lastAcc.x;
+    const dy = (acc.y || 0) - lastAcc.y;
+    const dz = (acc.z || 0) - lastAcc.z;
+    lastAcc = { x: acc.x || 0, y: acc.y || 0, z: acc.z || 0 };
+
+    const motion = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    smoothed = smoothed * 0.8 + motion * 0.2;
+
+    const pct = Math.min(100, smoothed * 10);
+    document.getElementById('meter-fill').style.width = pct + '%';
+
+    if (smoothed > 1.2) {
+      lockedFont = Math.min(MAX, lockedFont + smoothed * 0.6);
+      clearTimeout(decayTimer);
+      decayTimer = setTimeout(() => {
+        let decay = setInterval(() => {
+          lockedFont = Math.max(MIN, lockedFont - 0.5);
+          setFont(lockedFont);
+          if (lockedFont <= MIN) clearInterval(decay);
+        }, 100);
+      }, 2000);
+    }
+
+    setFont(lockedFont);
+
+    if (count === 1) log('אירוע ראשון OK');
+    if (count === 50) log('50 אירועים — עובד מצוין');
+  }
+
+  function startSensor() {
+    log('רושם listener...');
+    window.addEventListener('devicemotion', onMotion, true);
+    document.getElementById('dot').classList.add('active');
+    document.getElementById('status-text').textContent = 'חיישן פעיל — נענע את הטלפון';
+    document.getElementById('start-btn').disabled = true;
+    document.getElementById('start-btn').style.opacity = '0.5';
+
+    setTimeout(() => {
+      if (count === 0) log('אחרי 3 שניות — עדיין 0 אירועים');
+    }, 3000);
+
+    log('listener נרשם');
+  }
+
+  setFont(MIN);
+</script>
+</body>
+</html>
