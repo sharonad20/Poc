@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>פונט חכם</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #f5f5f3; color: #1a1a1a; padding: 1.5rem; }
+  .box { background: #fff; border: 1px solid #e5e5e5; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+  #status { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #666; }
+  #dot { width: 10px; height: 10px; border-radius: 50%; background: #ccc; flex-shrink: 0; transition: background 0.3s; }
+  #dot.active { background: #1D9E75; }
+  #meter-bar { height: 6px; background: #e5e5e5; border-radius: 4px; overflow: hidden; margin-top: 10px; }
+  #meter-fill { height: 100%; width: 50%; background: #1D9E75; border-radius: 4px; transition: width 0.08s; }
+  #sample { line-height: 1.7; transition: font-size 0.3s ease; color: #1a1a1a; font-size: 14px; }
+  #font-info { font-size: 12px; color: #999; margin-top: 0.75rem; }
+  #font-size-big { font-size: 28px; font-weight: 500; color: #1D9E75; }
+  button { width: 100%; padding: 0.85rem; border-radius: 10px; border: none; background: #1D9E75; color: #fff; font-size: 15px; font-weight: 500; cursor: pointer; margin-bottom: 1rem; }
+  button:active { background: #0F6E56; }
+  #reset-btn { background: #fff; color: #1a1a1a; border: 1px solid #e5e5e5; margin-bottom: 0; }
+  #debug-row { display: flex; justify-content: space-between; font-size: 12px; color: #999; margin-top: 8px; }
+  #direction-indicator { text-align: center; font-size: 13px; margin-top: 6px; color: #666; min-height: 20px; }
+</style>
+</head>
+<body>
+
+<div class="box">
+  <div id="status"><div id="dot"></div><span id="status-text">לחץ התחל</span></div>
+  <div id="meter-bar"><div id="meter-fill"></div></div>
+  <div id="direction-indicator" id="dir">—</div>
+  <div id="debug-row">
+    <span>כיוון: <strong id="dir-val">—</strong></span>
+    <span>עוצמה: <strong id="power-val">0.00</strong></span>
+    <span>פונט: <strong id="font-val">14</strong>px</span>
+  </div>
+</div>
+
+<div class="box">
+  <p id="sample">בגיל 40 ומעלה, העדשה בעין הופכת פחות גמישה — תופעה הנקראת פרסביופיה. הטלפון מורחק מהעיניים כי זה פשוט עוזר לראות טוב יותר. הרחק את הטלפון ותראה מה קורה.</p>
+  <div id="font-info">גודל פונט: <span id="font-size-big">14</span>px</div>
+</div>
+
+<button onclick="startSensor()">התחל — הפעל חיישן</button>
+<button id="reset-btn" onclick="resetFont()">אפס פונט</button>
+
+<script>
+  const MIN = 14, MAX = 30;
+  let lockedFont = MIN;
+  let active = false;
+
+  let lastAcc = null;
+  let velY = 0, velZ = 0;
+  let smoothedVelY = 0, smoothedVelZ = 0;
+  let lastTime = null;
+
+  function setFont(size) {
+    size = Math.min(MAX, Math.max(MIN, size));
+    document.getElementById('sample').style.fontSize = size + 'px';
+    document.getElementById('font-val').textContent = Math.round(size);
+    document.getElementById('font-size-big').textContent = Math.round(size);
+    lockedFont = size;
+  }
+
+  function resetFont() {
+    lockedFont = MIN;
+    setFont(MIN);
+  }
+
+  function onMotion(e) {
+    const acc = e.acceleration;
+    if (!acc) return;
+
+    const now = Date.now();
+    const dt = lastTime ? Math.min((now - lastTime) / 1000, 0.1) : 0.016;
+    lastTime = now;
+
+    const ax = acc.x || 0;
+    const ay = acc.y || 0;
+    const az = acc.z || 0;
+
+    if (lastAcc === null) {
+      lastAcc = { x: ax, y: ay, z: az };
+      return;
+    }
+
+    // integrate acceleration to get velocity delta
+    velY += ay * dt;
+    velZ += az * dt;
+
+    // decay velocity (simulate drag)
+    velY *= 0.85;
+    velZ *= 0.85;
+
+    // smooth
+    smoothedVelY = smoothedVelY * 0.7 + velY * 0.3;
+    smoothedVelZ = smoothedVelZ * 0.7 + velZ * 0.3;
+
+    // combined signal — moving away = Y negative (down) or Z positive (forward)
+    // moving closer = Y positive (up) or Z negative (back toward face)
+    const awaySignal = (-smoothedVelY + smoothedVelZ) * 0.5;
+
+    const power = Math.abs(awaySignal);
+    const meterPct = Math.min(100, 50 + awaySignal * 30);
+
+    document.getElementById('meter-fill').style.width = Math.round(meterPct) + '%';
+    document.getElementById('power-val').textContent = power.toFixed(2);
+
+    if (awaySignal > 0.15) {
+      document.getElementById('dir-val').textContent = 'מרחיק ↑';
+      document.getElementById('meter-fill').style.background = '#1D9E75';
+      lockedFont = Math.min(MAX, lockedFont + power * 1.5);
+      setFont(lockedFont);
+    } else if (awaySignal < -0.15) {
+      document.getElementById('dir-val').textContent = 'מקרב ↓';
+      document.getElementById('meter-fill').style.background = '#D85A30';
+      lockedFont = Math.max(MIN, lockedFont - power * 1.5);
+      setFont(lockedFont);
+    } else {
+      document.getElementById('dir-val').textContent = 'יציב';
+    }
+
+    lastAcc = { x: ax, y: ay, z: az };
+  }
+
+  function startSensor() {
+    if (active) return;
+    active = true;
+    window.addEventListener('devicemotion', onMotion, true);
+    document.getElementById('dot').classList.add('active');
+    document.getElementById('status-text').textContent = 'חיישן פעיל — הרחק / קרב';
+    document.querySelector('button').disabled = true;
+    document.querySelector('button').style.opacity = '0.5';
+  }
+
+  setFont(MIN);
+</script>
+</body>
+</html>
