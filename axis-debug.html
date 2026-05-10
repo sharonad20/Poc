@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>בדיקת צירים</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui; background: #f5f5f3; padding: 1.5rem; }
+  .box { background: #fff; border: 1px solid #e5e5e5; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #f0f0f0; }
+  .row:last-child { border-bottom: none; }
+  .axis-label { font-size: 13px; color: #666; }
+  .axis-val { font-size: 20px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .bar-wrap { height: 6px; background: #eee; border-radius: 4px; margin-top: 4px; overflow: hidden; }
+  .bar { height: 100%; border-radius: 4px; transition: width 0.05s; }
+  .x-bar { background: #D85A30; }
+  .y-bar { background: #1D9E75; }
+  .z-bar { background: #378ADD; }
+  .delta-row { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; }
+  .delta-label { color: #999; }
+  .delta-val { font-weight: 500; font-variant-numeric: tabular-nums; }
+  button { width: 100%; padding: 0.85rem; border-radius: 10px; border: none; background: #1D9E75; color: #fff; font-size: 15px; font-weight: 500; cursor: pointer; margin-bottom: 1rem; }
+  #instruction { font-size: 13px; color: #666; line-height: 1.7; }
+  #peak { font-size: 13px; color: #378ADD; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<button onclick="start()">התחל מדידה</button>
+
+<div class="box">
+  <div style="font-size:12px;color:#999;margin-bottom:8px;">ערכים נוכחיים (כולל כבידה)</div>
+
+  <div class="row">
+    <div>
+      <div class="axis-label">X (שמאל/ימין)</div>
+      <div class="axis-val" id="x-val">0.00</div>
+      <div class="bar-wrap"><div class="bar x-bar" id="x-bar" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div style="width:100%">
+      <div class="axis-label">Y (מעלה/מטה)</div>
+      <div class="axis-val" id="y-val">0.00</div>
+      <div class="bar-wrap"><div class="bar y-bar" id="y-bar" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div style="width:100%">
+      <div class="axis-label">Z (קדימה/אחורה)</div>
+      <div class="axis-val" id="z-val">0.00</div>
+      <div class="bar-wrap"><div class="bar z-bar" id="z-bar" style="width:0%"></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="box">
+  <div style="font-size:12px;color:#999;margin-bottom:8px;">שינוי מהמדידה הקודמת (דלתא)</div>
+  <div class="delta-row"><span class="delta-label">dX</span><span class="delta-val" id="dx-val">0.00</span></div>
+  <div class="delta-row"><span class="delta-label">dY</span><span class="delta-val" id="dy-val">0.00</span></div>
+  <div class="delta-row"><span class="delta-label">dZ</span><span class="delta-val" id="dz-val">0.00</span></div>
+  <div id="peak"></div>
+</div>
+
+<div class="box">
+  <div id="instruction">
+    לחץ התחל ואז בצע לאט את התנועה שאתה רוצה לזהות — הרחקה למטה או אחורה. נראה על איזה ציר הערך הכי גדול.
+  </div>
+</div>
+
+<script>
+  let lastAcc = { x: 0, y: 0, z: 0 };
+  let maxDelta = { x: 0, y: 0, z: 0 };
+
+  function start() {
+    window.addEventListener('devicemotion', onMotion, true);
+    document.getElementById('instruction').textContent = 'מודד... בצע את תנועת ההרחקה עכשיו';
+  }
+
+  function onMotion(e) {
+    const acc = e.accelerationIncludingGravity || e.acceleration;
+    if (!acc) return;
+
+    const x = acc.x || 0, y = acc.y || 0, z = acc.z || 0;
+
+    document.getElementById('x-val').textContent = x.toFixed(2);
+    document.getElementById('y-val').textContent = y.toFixed(2);
+    document.getElementById('z-val').textContent = z.toFixed(2);
+
+    document.getElementById('x-bar').style.width = Math.min(100, Math.abs(x) * 10) + '%';
+    document.getElementById('y-bar').style.width = Math.min(100, Math.abs(y) * 10) + '%';
+    document.getElementById('z-bar').style.width = Math.min(100, Math.abs(z) * 10) + '%';
+
+    const dx = Math.abs(x - lastAcc.x);
+    const dy = Math.abs(y - lastAcc.y);
+    const dz = Math.abs(z - lastAcc.z);
+
+    document.getElementById('dx-val').textContent = dx.toFixed(2);
+    document.getElementById('dy-val').textContent = dy.toFixed(2);
+    document.getElementById('dz-val').textContent = dz.toFixed(2);
+
+    if (dx > maxDelta.x) maxDelta.x = dx;
+    if (dy > maxDelta.y) maxDelta.y = dy;
+    if (dz > maxDelta.z) maxDelta.z = dz;
+
+    const dominant = maxDelta.x > maxDelta.y && maxDelta.x > maxDelta.z ? 'X' :
+                     maxDelta.y > maxDelta.z ? 'Y' : 'Z';
+
+    document.getElementById('peak').textContent =
+      `שיא: X=${maxDelta.x.toFixed(2)} Y=${maxDelta.y.toFixed(2)} Z=${maxDelta.z.toFixed(2)} → הציר הדומיננטי: ${dominant}`;
+
+    lastAcc = { x, y, z };
+  }
+</script>
+</body>
+</html>
